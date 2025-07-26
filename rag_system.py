@@ -17,11 +17,21 @@ from langchain.memory import ConversationBufferWindowMemory
 from langchain_groq import ChatGroq
 from evaluation import EvaluationDataset, RAGEvaluator
 import statistics
+from dotenv import load_dotenv
 
-from config import (
-    GROQ_API_KEY, GROQ_MODEL_NAME, EMBEDDING_MODEL_NAME, DOCUMENTS_FOLDER,
-    CHUNK_SIZE, CHUNK_OVERLAP, COLLECTION_NAME
-)
+# Load environment variables from .env file
+load_dotenv()
+
+# Configuration constants
+GROQ_API_KEY = os.getenv('GROQ_API_KEY')
+# Don't raise error at import time - let the class handle it
+
+GROQ_MODEL_NAME = "llama3-70b-8192"  # More efficient model
+EMBEDDING_MODEL_NAME = "BAAI/bge-large-en-v1.5"  # Reverted to working model
+DOCUMENTS_FOLDER = "documents"
+CHUNK_SIZE = 400  # Reduced for more focused chunks - better for keyword matching
+CHUNK_OVERLAP = 200  # Increased overlap for better context preservation
+COLLECTION_NAME = "github_api_docs"
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +50,7 @@ class LangChainRAGSystem:
         try:
             api_key = groq_api_key or GROQ_API_KEY
             if not api_key:
-                raise ValueError("Groq API key not provided in code or parameter")
+                raise ValueError("GROQ_API_KEY not found in environment variables. Please check your .env file or provide the API key as a parameter.")
             
             # Use a more compatible embedding approach
             try:

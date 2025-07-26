@@ -2,11 +2,7 @@ import streamlit as st
 import logging
 from datetime import datetime
 import json
-from rag_system import LangChainRAGSystem
-from config import (
-    GROQ_API_KEY, GROQ_MODEL_NAME, EMBEDDING_MODEL_NAME, DOCUMENTS_FOLDER,
-    CHUNK_SIZE, CHUNK_OVERLAP, COLLECTION_NAME
-)
+from rag_system import LangChainRAGSystem, GROQ_API_KEY, GROQ_MODEL_NAME, EMBEDDING_MODEL_NAME, DOCUMENTS_FOLDER, CHUNK_SIZE, CHUNK_OVERLAP, COLLECTION_NAME
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
