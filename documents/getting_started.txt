@@ -1,0 +1,51 @@
+GitHub API Overview
+==================
+
+The GitHub API (Application Programming Interface) allows developers to interact with GitHub programmatically. It provides access to a vast amount of data and functionality, enabling automation of workflows, integration with other services, and building custom applications that leverage GitHub's features.
+
+Base URL and Endpoint Structure
+==============================
+All GitHub API requests should be made to the following base URL:
+    https://api.github.com
+
+Complete endpoint format: https://api.github.com/{resource_path}
+Example: https://api.github.com/user
+Example: https://api.github.com/users/octocat
+Example: https://api.github.com/repos/owner/repository
+
+API Versioning
+=============
+The GitHub API uses custom media types to allow consumers to opt into different versions of the API.
+- Default version: v3 (automatically applied if no version specified)
+- Recommended Accept header: Accept: application/vnd.github.v3+json
+- Version specification: Include Accept header to specify desired media type
+- Media type format: application/vnd.github.v3+json
+
+Quick Start Examples
+==================
+
+Get User Profile (requires authentication):
+curl -H "Authorization: token YOUR_PERSONAL_ACCESS_TOKEN" \
+     -H "Accept: application/vnd.github.v3+json" \
+     https://api.github.com/user
+
+Get Public User Information (no authentication required):
+curl -H "Accept: application/vnd.github.v3+json" \
+     https://api.github.com/users/octocat
+
+Get Repository Information (no authentication required for public repos):
+curl -H "Accept: application/vnd.github.v3+json" \
+     https://api.github.com/repos/octocat/Spoon-Knife
+
+Common Request Headers
+====================
+- Authorization: token YOUR_PERSONAL_ACCESS_TOKEN (for authentication)
+- Accept: application/vnd.github.v3+json (for API version)
+- User-Agent: YourAppName (recommended for identification)
+- Content-Type: application/json (for POST/PUT requests with JSON body)
+
+Response Format
+==============
+All GitHub API responses are in JSON format.
+HTTP status codes indicate success or failure.
+Successful responses typically return 200 OK for GET requests, 201 Created for POST requests. 

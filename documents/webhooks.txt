@@ -1,0 +1,100 @@
+GitHub Webhooks Guide
+=====================
+
+Webhooks allow you to build or set up integrations that subscribe to certain events on GitHub. When one of those events occurs, GitHub sends an HTTP POST request to the webhook's configured URL with event data.
+
+What are Webhooks?
+==================
+
+Webhooks are HTTP callbacks that GitHub sends to your application when specific events occur in repositories, organizations, or GitHub Apps. They enable real-time notifications and automated workflows.
+
+How Webhooks Work:
+1. You configure a webhook URL for a repository or organization
+2. You select which events should trigger the webhook
+3. When those events occur, GitHub sends a POST request to your URL
+4. Your application receives the request and processes the event data
+
+Common Webhook Use Cases
+=======================
+
+Continuous Integration/Continuous Deployment (CI/CD):
+- Triggering CI/CD pipelines on push events
+- Running automated tests when pull requests are created
+- Deploying applications when code is merged to main branch
+
+Issue and Project Management:
+- Updating external issue trackers on issues events
+- Syncing GitHub issues with project management tools
+- Creating notifications for issue assignments
+
+Communication and Notifications:
+- Sending notifications to chat applications (Slack, Discord, Teams)
+- Emailing team members about repository activity
+- Posting updates to company dashboards
+
+Code Quality and Security:
+- Running security scans on new commits
+- Performing code quality checks
+- Updating documentation when code changes
+
+Available Webhook Events
+=======================
+
+Repository Events:
+- push: Code is pushed to the repository
+- pull_request: Pull request is opened, closed, or synchronized
+- issues: Issues are opened, closed, edited, or assigned
+- release: Releases are published or edited
+- fork: Repository is forked
+- watch: Repository is starred
+
+Organization Events:
+- member: Organization membership is added or removed
+- team: Team is created, deleted, or modified
+- repository: Repository is created, deleted, or transferred
+
+Webhook Event Types:
+- create: Branch or tag is created
+- delete: Branch or tag is deleted
+- commit_comment: Comment is made on a commit
+- pull_request_review: Pull request review is submitted
+- pull_request_review_comment: Comment is made on pull request review
+
+Webhook Configuration
+====================
+
+Webhook Setup Requirements:
+- Webhook URL: HTTPS endpoint that will receive POST requests
+- Content Type: application/json or application/x-www-form-urlencoded
+- Secret: Optional secret for request verification
+- SSL Verification: Enable for production use
+
+Webhook Payload Structure:
+GitHub sends POST requests with JSON payload containing:
+- Event type in X-GitHub-Event header
+- Event data in request body
+- Signature in X-Hub-Signature header (if secret is configured)
+
+Example Webhook Payload Headers:
+X-GitHub-Event: push
+X-GitHub-Delivery: 12345678-1234-1234-1234-123456789012
+X-Hub-Signature: sha1=<signature>
+Content-Type: application/json
+
+Webhook Security:
+- Always use HTTPS for webhook URLs
+- Verify webhook signatures using your secret
+- Validate payload structure before processing
+- Implement proper error handling and logging
+
+Setting Up Webhooks:
+1. Repository webhooks: Repository Settings → Webhooks
+2. Organization webhooks: Organization Settings → Webhooks
+3. GitHub Apps: Include webhook URL in app configuration
+4. API creation: Use POST /repos/{owner}/{repo}/hooks endpoint
+
+Testing Webhooks:
+- Use tools like ngrok for local development
+- Check webhook delivery history in GitHub settings
+- Implement webhook endpoint logging for debugging
+- Use GitHub's webhook redelivery feature for testing 

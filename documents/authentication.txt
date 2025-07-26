@@ -1,0 +1,58 @@
+GitHub API Authentication Methods
+=================================
+
+Most GitHub API endpoints require authentication to access private data or perform actions. GitHub supports several authentication methods for different use cases.
+
+Personal Access Tokens (PATs)
+=============================
+
+What are Personal Access Tokens?
+Personal Access Tokens are alternative passwords for authentication with GitHub API. They are the simplest way to authenticate for scripts and command-line tools.
+
+PAT Characteristics:
+- Can be revoked at any time
+- Have specific scopes (permissions)
+- More secure than using passwords
+- Recommended for personal scripts and automation
+
+How to Use Personal Access Tokens:
+Include the PAT in the Authorization header of your request using this format:
+    Authorization: token YOUR_PERSONAL_ACCESS_TOKEN
+
+PAT Authentication Example:
+curl -H "Authorization: token YOUR_PERSONAL_ACCESS_TOKEN" \
+     -H "Accept: application/vnd.github.v3+json" \
+     https://api.github.com/user
+
+PAT Security Best Practices:
+- Treat PATs like passwords - never expose them in public repositories
+- Do not include PATs in client-side code or public scripts
+- Grant only the necessary scopes (permissions) to your PATs
+- Revoke PATs when they are no longer needed
+- Use environment variables to store PATs in applications
+- Rotate PATs regularly for enhanced security
+
+OAuth Apps Authentication
+=========================
+
+OAuth Apps are used for applications that need to act on behalf of users. Users grant permission to your application to access their GitHub data without sharing their credentials directly with your app.
+
+OAuth Flow Steps:
+1. Request User Authorization: Redirect the user to GitHub's authorization page
+2. User Grants Access: The user authorizes your app on GitHub
+3. GitHub Redirects Back: GitHub redirects the user back to your app with a temporary code
+4. Exchange Code for Access Token: Your app exchanges the code for an access_token using your client_id and client_secret
+5. Use Access Token: Use the access_token in the Authorization header
+
+OAuth Token Usage:
+Authorization: token OAUTH_ACCESS_TOKEN
+
+When to Use Each Method:
+- Personal Access Tokens: Personal scripts, command-line tools, server-to-server communication
+- OAuth Apps: Web applications, mobile apps, applications acting on behalf of users
+
+Authentication Requirements by Endpoint:
+- GET /user: Requires authentication (PAT or OAuth)
+- GET /users/{username}: Optional authentication (higher rate limits with auth)
+- POST /user/repos: Requires authentication with repo scope
+- GET /repos/{owner}/{repo}: Optional for public repos, required for private repos 

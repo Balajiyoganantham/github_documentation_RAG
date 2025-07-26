@@ -1,0 +1,59 @@
+GitHub API Error Handling Guide
+===============================
+
+The GitHub API uses standard HTTP status codes to indicate the success or failure of requests. Understanding these codes is essential for proper error handling in your applications.
+
+HTTP Status Codes Reference
+===========================
+
+Success Status Codes:
+- 200 OK: The request was successful and returned data
+- 201 Created: The resource was successfully created (e.g., new repository, new issue)
+- 204 No Content: The request was successful, but there is no content to return (e.g., successful deletion)
+- 304 Not Modified: The resource has not been modified since the last request (used with conditional requests)
+
+Client Error Status Codes:
+- 400 Bad Request: The request was malformed or invalid syntax
+- 401 Unauthorized: Authentication is required or authentication has failed
+- 403 Forbidden: The authenticated user does not have permission to access the resource or rate limiting is in effect
+- 404 Not Found: The requested resource could not be found
+- 422 Unprocessable Entity: The request was well-formed but unable to be processed due to semantic errors (e.g., validation failed)
+
+Server Error Status Codes:
+- 500 Internal Server Error: A generic server error occurred
+- 503 Service Unavailable: The server is currently unable to handle the request due to temporary overloading or maintenance
+
+Error Response Structure
+=======================
+When an error occurs (typically 4xx or 5xx status codes), the GitHub API returns a JSON object with detailed error information:
+
+Standard Error Response Format:
+{
+  "message": "Validation Failed",
+  "errors": [
+    {
+      "resource": "Issue",
+      "field": "title",
+      "code": "missing_field"
+    }
+  ],
+  "documentation_url": "https://docs.github.com/rest/issues/issues#create-an-issue"
+}
+
+Error Response Fields:
+- message: Human-readable error message
+- errors: Array of specific error details
+- documentation_url: Link to relevant API documentation
+
+Common Error Scenarios:
+- 401 Unauthorized: Invalid or missing authentication token
+- 403 Forbidden: Insufficient permissions or rate limit exceeded
+- 404 Not Found: Repository, user, or resource does not exist
+- 422 Unprocessable Entity: Invalid field values or missing required fields
+
+Rate Limiting Errors:
+Status Code: 403 Forbidden
+Response headers include:
+- X-RateLimit-Limit: Request limit per hour
+- X-RateLimit-Remaining: Remaining requests in current window
+- X-RateLimit-Reset: Time when rate limit resets 

@@ -1,0 +1,78 @@
+GitHub Users API Reference
+==========================
+
+The Users API provides endpoints for retrieving user information from GitHub. This includes both authenticated user data and public user profiles.
+
+Get the Authenticated User
+==========================
+
+Endpoint: GET /user
+Purpose: Retrieves information about the currently authenticated user
+Authentication: Required (Personal Access Token or OAuth token)
+HTTP Method: GET
+Full URL: https://api.github.com/user
+
+Request Headers:
+- Authorization: token YOUR_PERSONAL_ACCESS_TOKEN (required)
+- Accept: application/vnd.github.v3+json (recommended)
+
+Response Status Code: 200 OK
+Response Format: User object (JSON)
+
+Example cURL Request:
+curl -H "Authorization: token YOUR_PERSONAL_ACCESS_TOKEN" \
+     -H "Accept: application/vnd.github.v3+json" \
+     https://api.github.com/user
+
+Use Cases:
+- Verify authentication token validity
+- Get current user's profile information
+- Retrieve user ID for other API operations
+- Check user permissions and scopes
+
+Get a User by Username
+=====================
+
+Endpoint: GET /users/{username}
+Purpose: Retrieves public information about a specific user by their username
+Authentication: Optional (higher rate limits with authentication)
+HTTP Method: GET
+Full URL: https://api.github.com/users/{username}
+
+Path Parameters:
+- username (string, required): The GitHub username of the user
+
+Request Headers:
+- Accept: application/vnd.github.v3+json (recommended)
+- Authorization: token YOUR_PERSONAL_ACCESS_TOKEN (optional, for higher rate limits)
+
+Response Status Code: 200 OK
+Response Format: User object (JSON)
+
+Example cURL Request:
+curl -H "Accept: application/vnd.github.v3+json" \
+     https://api.github.com/users/octocat
+
+Example with Authentication:
+curl -H "Authorization: token YOUR_PERSONAL_ACCESS_TOKEN" \
+     -H "Accept: application/vnd.github.v3+json" \
+     https://api.github.com/users/octocat
+
+Common User Object Fields:
+- login: GitHub username
+- id: Unique user ID
+- avatar_url: Profile picture URL
+- name: Display name
+- email: Public email address
+- bio: User biography
+- public_repos: Number of public repositories
+- followers: Number of followers
+- following: Number of users being followed
+
+Error Responses:
+- 404 Not Found: User does not exist
+- 403 Forbidden: Rate limit exceeded (if not authenticated)
+
+Rate Limiting:
+- Unauthenticated requests: Lower rate limit
+- Authenticated requests: Higher rate limit (recommended) 

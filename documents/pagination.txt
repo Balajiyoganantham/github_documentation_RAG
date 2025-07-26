@@ -1,0 +1,56 @@
+GitHub API Pagination Guide
+===========================
+
+Many GitHub API endpoints that return lists of resources implement pagination to manage large result sets efficiently. Understanding pagination is crucial for retrieving complete datasets.
+
+Pagination Parameters
+====================
+
+per_page Parameter:
+- Purpose: Specifies the number of items to return per page
+- Default value: Usually 30 items per page
+- Maximum value: 100 items per page
+- Usage: ?per_page=50
+
+page Parameter:
+- Purpose: Specifies which page number to retrieve
+- Default value: 1 (first page)
+- Usage: ?page=2
+
+Pagination Example URLs:
+- First page with 50 items: https://api.github.com/user/repos?per_page=50&page=1
+- Second page with 50 items: https://api.github.com/user/repos?per_page=50&page=2
+- Third page with default items: https://api.github.com/user/repos?page=3
+
+Link Header Navigation
+=====================
+Responses for paginated resources include a Link header that contains URLs for navigation between pages.
+
+Link Header Format:
+Link: <https://api.github.com/user/repos?page=2>; rel="next",
+      <https://api.github.com/user/repos?page=5>; rel="last",
+      <https://api.github.com/user/repos?page=1>; rel="first",
+      <https://api.github.com/user/repos?page=1>; rel="prev"
+
+Link Relations:
+- rel="next": URL for the next page of results
+- rel="prev": URL for the previous page of results
+- rel="first": URL for the first page of results
+- rel="last": URL for the last page of results
+
+Pagination Best Practices:
+- Always check for the presence of Link header
+- Use the provided URLs rather than constructing your own
+- Handle cases where next/prev links may not exist
+- Consider rate limits when paginating through large datasets
+
+Pagination Implementation Example:
+1. Make initial request: GET /user/repos?per_page=100
+2. Check Link header for "next" relation
+3. Follow "next" URL if it exists
+4. Repeat until no "next" link is present
+
+Common Paginated Endpoints:
+- GET /user/repos: List user repositories
+- GET /repos/{owner}/{repo}/issues: List repository issues
+- GET /users/{username}/repos: List user's public repositories 

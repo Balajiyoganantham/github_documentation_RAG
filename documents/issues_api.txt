@@ -1,0 +1,117 @@
+GitHub Issues API Reference
+===========================
+
+The Issues API allows you to list, view, and create issues for repositories. Issues are used for tracking bugs, feature requests, and other repository-related discussions.
+
+List Repository Issues
+=====================
+
+Endpoint: GET /repos/{owner}/{repo}/issues
+Purpose: Lists issues for a specific repository
+Authentication: Optional (required for private repositories)
+HTTP Method: GET
+Full URL: https://api.github.com/repos/{owner}/{repo}/issues
+
+Path Parameters:
+- owner (string, required): The account owner of the repository (username or organization)
+- repo (string, required): The name of the repository
+
+Optional Query Parameters:
+- state (string): Filter issues by state
+  * open: Open issues (default)
+  * closed: Closed issues
+  * all: All issues regardless of state
+- creator (string): Filter by the username of the issue creator
+- assignee (string): Filter by the username of the assignee
+- labels (string): Comma-separated list of label names to filter by
+- sort (string): Sort issues by:
+  * created: Date created (default)
+  * updated: Date last updated
+  * comments: Number of comments
+- direction (string): Sort direction
+  * asc: Ascending order
+  * desc: Descending order (default)
+- since (string): Only issues updated at or after this time (ISO 8601 format: YYYY-MM-DDTHH:MM:SSZ)
+- per_page (integer): Results per page (max 100, default 30)
+- page (integer): Page number for pagination (default 1)
+
+Response Status Code: 200 OK
+Response Format: Array of Issue objects (JSON)
+
+Example cURL Requests:
+# List open issues with bug label
+curl -H "Accept: application/vnd.github.v3+json" \
+     "https://api.github.com/repos/octocat/Spoon-Knife/issues?state=open&labels=bug"
+
+# List all issues sorted by update date
+curl -H "Accept: application/vnd.github.v3+json" \
+     "https://api.github.com/repos/octocat/Spoon-Knife/issues?state=all&sort=updated&direction=desc"
+
+# List issues created by specific user
+curl -H "Accept: application/vnd.github.v3+json" \
+     "https://api.github.com/repos/octocat/Spoon-Knife/issues?creator=octocat"
+
+Create an Issue
+==============
+
+Endpoint: POST /repos/{owner}/{repo}/issues
+Purpose: Creates a new issue in a specified repository
+Authentication: Required (needs repo scope or public_repo scope for public repositories)
+HTTP Method: POST
+Full URL: https://api.github.com/repos/{owner}/{repo}/issues
+
+Path Parameters:
+- owner (string, required): The account owner of the repository
+- repo (string, required): The name of the repository
+
+Required Headers:
+- Authorization: token YOUR_PERSONAL_ACCESS_TOKEN
+- Content-Type: application/json
+- Accept: application/vnd.github.v3+json
+
+Request Body (JSON):
+- title (string, required): The title of the issue
+- body (string, optional): The body text of the issue (supports Markdown)
+- milestone (integer, optional): The number of the milestone to associate this issue with
+- labels (array of strings, optional): Labels to associate with this issue
+- assignees (array of strings, optional): Logins for the users to assign to this issue
+
+Response Status Code: 201 Created
+Response Format: Issue object (JSON)
+
+Example cURL Request:
+curl -X POST \
+     -H "Authorization: token YOUR_PERSONAL_ACCESS_TOKEN" \
+     -H "Accept: application/vnd.github.v3+json" \
+     -H "Content-Type: application/json" \
+     -d '{"title": "Bug: Login button not working", "body": "The login button does not respond when clicked.", "labels": ["bug", "frontend"]}' \
+     https://api.github.com/repos/octocat/Spoon-Knife/issues
+
+Example with Multiple Parameters:
+curl -X POST \
+     -H "Authorization: token YOUR_PERSONAL_ACCESS_TOKEN" \
+     -H "Accept: application/vnd.github.v3+json" \
+     -H "Content-Type: application/json" \
+     -d '{"title": "Feature Request: Dark Mode", "body": "Add dark mode support to the application", "labels": ["enhancement", "feature"], "assignees": ["developer1", "developer2"]}' \
+     https://api.github.com/repos/owner/repository/issues
+
+Issue Object Common Fields:
+- id: Unique issue ID
+- number: Issue number within the repository
+- title: Issue title
+- body: Issue description
+- state: Issue state (open or closed)
+- labels: Array of label objects
+- assignees: Array of assigned user objects
+- created_at: Creation timestamp
+- updated_at: Last update timestamp
+
+Error Responses:
+- 401 Unauthorized: Invalid or missing authentication
+- 403 Forbidden: Insufficient permissions
+- 404 Not Found: Repository does not exist
+- 422 Unprocessable Entity: Validation failed (e.g., missing title, invalid labels)
+
+Authentication Scopes Required:
+- public_repo: For creating issues in public repositories
+- repo: For creating issues in private repositories 

@@ -1,0 +1,116 @@
+GitHub Repositories API Reference
+=================================
+
+The Repositories API provides endpoints for managing and retrieving repository information. This includes listing, creating, and getting repository details.
+
+List Repositories for the Authenticated User
+===========================================
+
+Endpoint: GET /user/repos
+Purpose: Lists repositories that the authenticated user has explicit permission to access
+Authentication: Required (Personal Access Token or OAuth token)
+HTTP Method: GET
+Full URL: https://api.github.com/user/repos
+
+Required Headers:
+- Authorization: token YOUR_PERSONAL_ACCESS_TOKEN
+
+Optional Query Parameters:
+- type (string): Filter by repository type
+  * all: All repositories (default)
+  * owner: Repositories owned by the authenticated user
+  * member: Repositories where user is a collaborator
+- sort (string): Sort repositories by:
+  * created: Date created
+  * updated: Date last updated
+  * pushed: Date of last push
+  * full_name: Repository name (default)
+- direction (string): Sort direction
+  * asc: Ascending order (default when sort is full_name)
+  * desc: Descending order (default for other sort options)
+- per_page (integer): Results per page (max 100, default 30)
+- page (integer): Page number for pagination (default 1)
+
+Response Status Code: 200 OK
+Response Format: Array of Repository objects (JSON)
+
+Example cURL Request:
+curl -H "Authorization: token YOUR_PERSONAL_ACCESS_TOKEN" \
+     -H "Accept: application/vnd.github.v3+json" \
+     "https://api.github.com/user/repos?type=owner&sort=updated&per_page=5"
+
+Get a Repository
+===============
+
+Endpoint: GET /repos/{owner}/{repo}
+Purpose: Retrieves detailed information about a specific repository
+Authentication: Optional (required for private repositories)
+HTTP Method: GET
+Full URL: https://api.github.com/repos/{owner}/{repo}
+
+Path Parameters:
+- owner (string, required): The account owner of the repository (username or organization name)
+- repo (string, required): The name of the repository
+
+Request Headers:
+- Accept: application/vnd.github.v3+json (recommended)
+- Authorization: token YOUR_PERSONAL_ACCESS_TOKEN (required for private repos)
+
+Response Status Code: 200 OK
+Response Format: Repository object (JSON)
+
+Example cURL Request:
+curl -H "Accept: application/vnd.github.v3+json" \
+     https://api.github.com/repos/octocat/Spoon-Knife
+
+Example for Private Repository:
+curl -H "Authorization: token YOUR_PERSONAL_ACCESS_TOKEN" \
+     -H "Accept: application/vnd.github.v3+json" \
+     https://api.github.com/repos/owner/private-repo
+
+Create a Repository for the Authenticated User
+============================================
+
+Endpoint: POST /user/repos
+Purpose: Creates a new repository for the authenticated user
+Authentication: Required (needs public_repo or repo scope)
+HTTP Method: POST
+Full URL: https://api.github.com/user/repos
+
+Required Headers:
+- Authorization: token YOUR_PERSONAL_ACCESS_TOKEN
+- Content-Type: application/json
+- Accept: application/vnd.github.v3+json
+
+Request Body (JSON):
+- name (string, required): The name of the repository
+- description (string, optional): A short description of the repository
+- private (boolean, optional): Whether the repository is private (default: false)
+- auto_init (boolean, optional): Whether to initialize the repository with a README (default: false)
+
+Response Status Code: 201 Created
+Response Format: Repository object (JSON)
+
+Example cURL Request:
+curl -X POST \
+     -H "Authorization: token YOUR_PERSONAL_ACCESS_TOKEN" \
+     -H "Accept: application/vnd.github.v3+json" \
+     -H "Content-Type: application/json" \
+     -d '{"name": "my-new-repo", "description": "This is a test repository", "private": true}' \
+     https://api.github.com/user/repos
+
+Repository Object Common Fields:
+- id: Unique repository ID
+- name: Repository name
+- full_name: Full repository name (owner/repo)
+- private: Whether repository is private
+- html_url: GitHub web URL
+- clone_url: HTTPS clone URL
+- ssh_url: SSH clone URL
+- default_branch: Default branch name (usually "main" or "master")
+
+Error Responses:
+- 401 Unauthorized: Invalid or missing authentication
+- 403 Forbidden: Insufficient permissions
+- 404 Not Found: Repository or owner does not exist
+- 422 Unprocessable Entity: Validation errors (e.g., repository name already exists) 
