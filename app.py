@@ -122,6 +122,12 @@ def main():
             st.write("✅ Evaluation System")
         return
     st.header("💬 Chat with Zoro")
+    # Suggested questions for the user
+    st.info("**Try asking one of these questions:**\n\n"
+            "1. How do I authenticate with the GitHub API?\n"
+            "2. How can I list all repositories for a user?\n"
+            "3. What should I do if I get a 404 error from the API?\n"
+            "4. How do webhooks work in GitHub?", icon="💡")
     for message in st.session_state.conversation_history:
         with st.chat_message(message["role"]):
             st.write(message["content"])
