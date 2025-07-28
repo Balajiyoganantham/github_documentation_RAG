@@ -24,4 +24,4 @@ rouge-score
 
 # Add any other dependencies as needed for your custom modules
 langchain_community
-langchain-community
+langchain_groq 
