@@ -1,5 +1,5 @@
 # rag_system.py
-# Handles the core RAG system logic for the Streamlit RAG app
+# Enhanced RAG system with conversational memory and improved retrieval
 
 import os
 import glob
@@ -12,7 +12,7 @@ from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.document_loaders import TextLoader
 from langchain.schema import Document
 from langchain.prompts import PromptTemplate
-from langchain.chains import RetrievalQA
+from langchain.chains import ConversationalRetrievalChain
 from langchain.memory import ConversationBufferWindowMemory
 from langchain_groq import ChatGroq
 from evaluation import EvaluationDataset, RAGEvaluator
@@ -24,80 +24,91 @@ load_dotenv()
 
 # Configuration constants
 GROQ_API_KEY = os.getenv('GROQ_API_KEY')
-# Don't raise error at import time - let the class handle it
-
-GROQ_MODEL_NAME = "llama3-70b-8192"  # More efficient model
-EMBEDDING_MODEL_NAME = "BAAI/bge-large-en-v1.5"  # Reverted to working model
+GROQ_MODEL_NAME = "llama3-70b-8192"
+EMBEDDING_MODEL_NAME = "BAAI/bge-large-en-v1.5"
 DOCUMENTS_FOLDER = "documents"
-CHUNK_SIZE = 400  # Reduced for more focused chunks - better for keyword matching
-CHUNK_OVERLAP = 200  # Increased overlap for better context preservation
+CHUNK_SIZE = 400
+CHUNK_OVERLAP = 200
 COLLECTION_NAME = "github_api_docs"
 
 logger = logging.getLogger(__name__)
 
-class LangChainRAGSystem:
-    """RAG System using LangChain with Groq and ChromaDB"""
+class EnhancedRAGSystem:
+    """Enhanced RAG System with Conversational Memory using LangChain"""
+    
     def __init__(self):
         self.embeddings = None
         self.vectorstore = None
         self.llm = None
-        self.qa_chain = None
+        self.conversational_chain = None
         self.memory = None
         self.text_splitter = None
         self.evaluator = None
         self.evaluation_dataset = EvaluationDataset()
+        self.conversation_history = []
+        self.response_times = []
+        self.confidence_scores = []
+        
     def initialize_components(self, groq_api_key: str = None):
+        """Initialize all RAG components"""
         try:
             api_key = groq_api_key or GROQ_API_KEY
             if not api_key:
-                raise ValueError("GROQ_API_KEY not found in environment variables. Please check your .env file or provide the API key as a parameter.")
+                raise ValueError("GROQ_API_KEY not found. Please check your .env file.")
             
-            # Use a more compatible embedding approach
+            # Initialize embeddings with fallback
             try:
-                from langchain_community.embeddings import HuggingFaceEmbeddings
                 self.embeddings = HuggingFaceEmbeddings(
                     model_name=EMBEDDING_MODEL_NAME,
                     model_kwargs={'device': 'cpu'},
                     encode_kwargs={'normalize_embeddings': True}
                 )
             except Exception as e:
-                logger.warning(f"Failed to load HuggingFaceEmbeddings: {e}")
-                # Fallback to a simpler embedding model
-                from langchain_community.embeddings import HuggingFaceEmbeddings
+                logger.warning(f"Failed to load {EMBEDDING_MODEL_NAME}, using fallback: {e}")
                 self.embeddings = HuggingFaceEmbeddings(
                     model_name="sentence-transformers/all-MiniLM-L6-v2",
                     model_kwargs={'device': 'cpu'},
                     encode_kwargs={'normalize_embeddings': True}
                 )
             
+            # Initialize Groq LLM
             self.llm = ChatGroq(
                 groq_api_key=api_key,
                 model_name=GROQ_MODEL_NAME,
-                temperature=0.05,  # Lower temperature for more focused responses
-                max_tokens=1200  # Increased for more comprehensive responses
+                temperature=0.05,
+                max_tokens=1500
             )
-            # Sliding window chunking
+            
+            # Initialize text splitter
             self.text_splitter = RecursiveCharacterTextSplitter(
                 chunk_size=CHUNK_SIZE,
                 chunk_overlap=CHUNK_OVERLAP,
                 length_function=len,
                 separators=["\n\n", "\n", " ", ""]
             )
+            
+            # Initialize conversation memory with window
             self.memory = ConversationBufferWindowMemory(
                 memory_key="chat_history",
                 return_messages=True,
-                k=6
+                k=10,  # Remember last 10 exchanges
+                output_key='answer'
             )
+            
             logger.info("All components initialized successfully")
             return True
+            
         except Exception as e:
             logger.error(f"Error initializing components: {e}")
             return False
+    
     def load_documents(self, folder_path: str) -> List[Document]:
+        """Load documents from folder"""
         documents = []
         if not os.path.exists(folder_path):
             logger.error(f"Documents folder not found: {folder_path}")
             return documents
+            
         txt_files = glob.glob(os.path.join(folder_path, "*.txt"))
         for file_path in txt_files:
             try:
@@ -106,240 +117,258 @@ class LangChainRAGSystem:
                 for doc in docs:
                     doc.metadata.update({
                         'source_file': os.path.basename(file_path),
-                        'source_path': file_path
+                        'source_path': file_path,
+                        'loaded_at': datetime.now().isoformat()
                     })
                     documents.extend([doc])
                 logger.info(f"Loaded document: {os.path.basename(file_path)}")
             except Exception as e:
                 logger.error(f"Error loading {file_path}: {e}")
+                
         return documents
+    
     def create_vectorstore(self, folder_path: str):
+        """Create and persist vector store"""
         try:
             documents = self.load_documents(folder_path)
             if not documents:
                 logger.warning("No documents found to process")
                 return False
+                
             texts = self.text_splitter.split_documents(documents)
+            
             self.vectorstore = Chroma.from_documents(
                 documents=texts,
                 embedding=self.embeddings,
                 collection_name=COLLECTION_NAME,
                 persist_directory="./chroma_db"
             )
+            
             self.vectorstore.persist()
             logger.info(f"Created vectorstore with {len(texts)} chunks")
             return True
+            
         except Exception as e:
             logger.error(f"Error creating vectorstore: {e}")
             return False
-    def generate_step_back_question(self, original_question: str) -> str:
-        step_back_prompt = f"""Given the following specific question about GitHub API:\n"{original_question}"\n\nGenerate a broader, more general question that would help understand the fundamental concepts needed to answer the original question. The step-back question should focus on general principles or broader categories.\n\nExamples:\n- Specific: \"How do I create a repository using POST /user/repos?\"\n- Step-back: \"What are the general patterns for creating resources via GitHub API?\"\n\n- Specific: \"How do I authenticate with personal access tokens?\"\n- Step-back: \"What are the different authentication methods available in GitHub API?\"\n\nStep-back question:"""
+    
+    def setup_conversational_chain(self):
+        """Setup conversational retrieval chain"""
         try:
-            response = self.llm.invoke(step_back_prompt)
-            return response.content.strip()
-        except Exception as e:
-            logger.error(f"Error generating step-back question: {e}")
-            return f"What are the general principles and concepts related to {original_question}?"
-    def setup_qa_chain(self):
-        try:
-            prompt_template = """You are Zoro, an expert AI assistant created by Balaji, specializing in GitHub API documentation.
+            # Custom prompt template for GitHub API assistant
+            custom_template = """You are Zoro, an expert GitHub API assistant created by Balaji. 
+            You have access to comprehensive GitHub API documentation and conversation history.
 
-CRITICAL REQUIREMENTS:
-1. Use EXACT terminology from the context (endpoints, parameters, status codes)
-2. Include specific API endpoints like "GET /user/repos" or "POST /repos"
-3. Mention authentication requirements when relevant
-4. Include query parameters when mentioned in context
-5. Use the exact keywords from the context
-6. If information is not in the context, say "I don't know"
-7. Be concise but comprehensive
-8. Focus on practical, actionable information
+            INSTRUCTIONS:
+            1. Use EXACT terminology from the context (endpoints, parameters, status codes)
+            2. Include specific API endpoints like "GET /user/repos" or "POST /repos"
+            3. Reference previous conversation when relevant
+            4. Mention authentication requirements when relevant
+            5. Include query parameters and HTTP methods
+            6. Be concise but comprehensive
+            7. If information is not in context, say "I don't have that information in my knowledge base"
+            8. Remember previous questions and build upon them
 
-Context: {context}
+            Context: {context}
+            Chat History: {chat_history}
+            Question: {question}
 
-Question: {question}
+            Answer (be specific and reference previous conversation when relevant):"""
 
-Chat History: {chat_history}
-
-Answer (be specific and use exact terms from context):"""
-            prompt = PromptTemplate(
-                template=prompt_template,
-                input_variables=["context", "question", "chat_history"]
+            # Create custom prompt
+            custom_prompt = PromptTemplate(
+                input_variables=["context", "chat_history", "question"],
+                template=custom_template
             )
-            self.qa_chain = RetrievalQA.from_chain_type(
+            
+            # Setup conversational retrieval chain
+            self.conversational_chain = ConversationalRetrievalChain.from_llm(
                 llm=self.llm,
-                chain_type="stuff",
                 retriever=self.vectorstore.as_retriever(
                     search_type="similarity",
-                    search_kwargs={"k": 8}  # Increased from 3 to 8 for better coverage
+                    search_kwargs={"k": 8}
                 ),
-                return_source_documents=True
+                memory=self.memory,
+                return_source_documents=True,
+                combine_docs_chain_kwargs={"prompt": custom_prompt},
+                verbose=True
             )
-            logger.info("QA chain setup successfully with step-back prompting")
+            
+            logger.info("Conversational chain setup successfully")
             return True
+            
         except Exception as e:
-            logger.error(f"Error setting up QA chain: {e}")
+            logger.error(f"Error setting up conversational chain: {e}")
             return False
+    
     def get_response(self, question: str) -> Dict[str, Any]:
+        """Get response with conversational memory"""
+        start_time = datetime.now()
+        
         try:
-            # Step 1: Enhanced query expansion for better retrieval
-            expanded_queries = [
-                question,
-                question.replace("?", "").strip(),
-                question.lower(),
-                # Add GitHub API specific terms
-                f"{question} GitHub API endpoint",
-                f"{question} authentication",
-                f"{question} parameters",
-                f"{question} HTTP method",
-                f"{question} status codes"
-            ]
+            # Get response from conversational chain
+            result = self.conversational_chain({
+                "question": question
+            })
             
-            # Step 2: Multi-query retrieval with higher k
-            all_docs = []
-            for query in expanded_queries[:5]:  # Use top 5 expanded queries
-                try:
-                    docs = self.vectorstore.similarity_search(query, k=5)
-                    all_docs.extend(docs)
-                except Exception as e:
-                    logger.warning(f"Failed to search for query '{query}': {e}")
+            # Calculate response time
+            end_time = datetime.now()
+            response_time = (end_time - start_time).total_seconds()
+            self.response_times.append(response_time)
             
-            # Step 3: Deduplicate and select best docs
-            unique_docs = []
-            seen_content = set()
-            for doc in all_docs:
-                content_hash = hash(doc.page_content[:200])
-                if content_hash not in seen_content:
-                    unique_docs.append(doc)
-                    seen_content.add(content_hash)
+            # Extract information
+            answer = result.get("answer", "")
+            source_documents = result.get("source_documents", [])
             
-            # Take top 8 unique docs for maximum coverage
-            docs = unique_docs[:8]
-            context = "\n\n".join([doc.page_content for doc in docs])
+            # Calculate confidence score based on various factors
+            confidence = self._calculate_confidence(question, answer, source_documents)
+            self.confidence_scores.append(confidence)
             
-            # Step 4: Create a highly directive prompt focused on exact matching
-            prompt_text = f"""You are a GitHub API expert. Answer the question using ONLY information from the provided context.
-
-CRITICAL REQUIREMENTS:
-1. Use EXACT terminology from the context (endpoints, parameters, status codes)
-2. Include specific API endpoints like "GET /user/repos" or "POST /repos"
-3. Mention authentication requirements when relevant
-4. Include query parameters when mentioned in context
-5. Use the exact keywords from the context
-6. If information is not in the context, say "I don't know"
-7. Be concise but comprehensive
-8. Focus on practical, actionable information
-9. Include HTTP status codes when mentioned
-10. Use exact parameter names and values
-
-Context:
-{context}
-
-Question: {question}
-
-Answer (be specific and use exact terms from context):"""
+            # Extract sources
+            sources = list(set([
+                doc.metadata.get('source_file', 'Unknown') 
+                for doc in source_documents
+            ]))
             
-            response = self.llm.invoke(prompt_text)
-            
-            # Step 5: Post-process to ensure key terms are included
-            response_text = response.content
-            
-            # Extract key terms from context that should be in the answer
-            context_lower = context.lower()
-            question_lower = question.lower()
-            
-            # Find important terms that should be mentioned
-            important_terms = []
-            
-            # Authentication terms
-            if "authentication" in question_lower or "auth" in question_lower:
-                if "personal access token" in context_lower:
-                    important_terms.append("Personal Access Token")
-                if "oauth" in context_lower:
-                    important_terms.append("OAuth")
-                if "authorization header" in context_lower:
-                    important_terms.append("Authorization header")
-                if "pat" in context_lower:
-                    important_terms.append("PAT")
-            
-            # API endpoint terms
-            if "endpoint" in question_lower or "api" in question_lower:
-                import re
-                endpoints = re.findall(r'[A-Z]+\s+/[a-zA-Z0-9/{}]+', context)
-                important_terms.extend(endpoints[:5])  # Top 5 endpoints
-            
-            # Status codes
-            if "status" in question_lower or "code" in question_lower:
-                status_codes = re.findall(r'\b(?:200|201|204|400|401|403|404|422|500|503)\b', context)
-                important_terms.extend(status_codes)
-            
-            # Parameters
-            if "parameter" in question_lower or "query" in question_lower:
-                params = re.findall(r'\b(?:per_page|page|type|sort|direction|state|labels|assignee|since)\b', context)
-                important_terms.extend(params)
-            
-            # If important terms are missing, add them
-            response_lower = response_text.lower()
-            missing_terms = []
-            for term in important_terms:
-                if term.lower() not in response_lower:
-                    missing_terms.append(term)
-            
-            if missing_terms:
-                response_text += f"\n\nNote: Key terms from context include: {', '.join(missing_terms[:3])}"
+            # Store conversation
+            self.conversation_history.append({
+                'question': question,
+                'answer': answer,
+                'timestamp': datetime.now().isoformat(),
+                'sources': sources,
+                'confidence': confidence,
+                'response_time': response_time
+            })
             
             return {
-                "answer": response_text,
-                "sources": list(set([doc.metadata.get('source_file', 'Unknown') for doc in docs])),
-                "source_documents": len(docs),
-                "step_back_question": "",
+                "answer": answer,
+                "confidence": confidence,
+                "sources": sources,
+                "source_documents": len(source_documents),
+                "response_time": response_time,
                 "retrieved_chunks": [
                     {
                         "content": doc.page_content[:300] + "..." if len(doc.page_content) > 300 else doc.page_content,
                         "source": doc.metadata.get('source_file', 'Unknown'),
-                        "type": "original"
+                        "relevance_score": getattr(doc, 'relevance_score', 0.0)
                     }
-                    for doc in docs
-                ]
+                    for doc in source_documents
+                ],
+                "memory_context": len(self.memory.chat_memory.messages)
             }
             
         except Exception as e:
             logger.error(f"Error generating response: {e}")
             return {
-                "answer": f"Error generating response: {str(e)}",
+                "answer": f"I apologize, but I encountered an error: {str(e)}",
+                "confidence": 0.0,
                 "sources": [],
                 "source_documents": 0,
-                "step_back_question": "",
-                "retrieved_chunks": []
+                "response_time": 0.0,
+                "retrieved_chunks": [],
+                "memory_context": 0
             }
+    
+    def _calculate_confidence(self, question: str, answer: str, source_documents: List) -> float:
+        """Calculate confidence score based on multiple factors"""
+        try:
+            confidence = 0.0
+            
+            # Factor 1: Number of source documents (0-0.3)
+            doc_count = len(source_documents)
+            if doc_count >= 5:
+                confidence += 0.3
+            elif doc_count >= 3:
+                confidence += 0.2
+            elif doc_count >= 1:
+                confidence += 0.1
+            
+            # Factor 2: Answer length and detail (0-0.2)
+            if len(answer) > 200 and "I don't" not in answer:
+                confidence += 0.2
+            elif len(answer) > 100:
+                confidence += 0.1
+            
+            # Factor 3: Specific API terms present (0-0.3)
+            api_terms = ['GET ', 'POST ', 'PUT ', 'DELETE ', '/api/', 'endpoint', 'parameter', 'header', 'token']
+            api_terms_found = sum(1 for term in api_terms if term.lower() in answer.lower())
+            confidence += min(0.3, api_terms_found * 0.05)
+            
+            # Factor 4: No uncertainty phrases (0-0.2)
+            uncertainty_phrases = ["I don't know", "I'm not sure", "I don't have", "unclear"]
+            if not any(phrase.lower() in answer.lower() for phrase in uncertainty_phrases):
+                confidence += 0.2
+            
+            return min(1.0, confidence)
+            
+        except Exception:
+            return 0.5
+    
+    def get_conversation_stats(self) -> Dict[str, Any]:
+        """Get conversation statistics"""
+        if not self.conversation_history:
+            return {}
+        
+        return {
+            "total_questions": len(self.conversation_history),
+            "avg_confidence": statistics.mean(self.confidence_scores) if self.confidence_scores else 0,
+            "avg_response_time": statistics.mean(self.response_times) if self.response_times else 0,
+            "memory_size": len(self.memory.chat_memory.messages),
+            "unique_sources": len(set([
+                source for conv in self.conversation_history 
+                for source in conv.get('sources', [])
+            ]))
+        }
+    
     def clear_memory(self):
+        """Clear conversation memory and history"""
         if self.memory:
             self.memory.clear()
+        self.conversation_history = []
+        self.response_times = []
+        self.confidence_scores = []
+        logger.info("Memory and conversation history cleared")
+    
+    def get_memory_summary(self) -> str:
+        """Get a summary of current conversation memory"""
+        if not self.memory or not self.memory.chat_memory.messages:
+            return "No conversation history"
+        
+        messages = self.memory.chat_memory.messages
+        return f"Conversation contains {len(messages)} messages. Recent topics discussed: {', '.join([msg.content[:50] + '...' for msg in messages[-3:] if hasattr(msg, 'content')])}"
+    
     def initialize_evaluator(self):
+        """Initialize evaluation system"""
         self.evaluator = RAGEvaluator(self)
         logger.info("Evaluation system initialized")
+    
     def run_evaluation(self) -> Dict[str, Any]:
+        """Run comprehensive evaluation"""
         if not self.evaluator:
             self.initialize_evaluator()
+            
         qa_pairs = self.evaluation_dataset.get_qa_pairs()
         results = []
-        import streamlit as st
-        st.write("🔄 Running evaluation...")
-        progress_bar = st.progress(0)
+        
         for i, qa_pair in enumerate(qa_pairs):
             question = qa_pair["question"]
             try:
                 rag_response = self.get_response(question)
                 predicted_response = rag_response["answer"]
+                
                 evaluation_result = self.evaluator.evaluate_response(
                     question, predicted_response, qa_pair
                 )
+                
                 evaluation_result["rag_metadata"] = {
                     "sources": rag_response.get("sources", []),
                     "source_documents": rag_response.get("source_documents", 0),
-                    "step_back_question": rag_response.get("step_back_question", "")
+                    "confidence": rag_response.get("confidence", 0.0),
+                    "response_time": rag_response.get("response_time", 0.0)
                 }
+                
                 results.append(evaluation_result)
-                progress_bar.progress((i + 1) / len(qa_pairs))
+                
             except Exception as e:
                 logger.error(f"Error evaluating question '{question}': {e}")
                 results.append({
@@ -347,11 +376,15 @@ Answer (be specific and use exact terms from context):"""
                     "error": str(e),
                     "timestamp": datetime.now().isoformat()
                 })
+        
+        # Calculate aggregate metrics
         valid_results = [r for r in results if "error" not in r]
+        
         if valid_results:
             f1_scores = [r["f1_metrics"]["f1"] for r in valid_results]
             rouge1_scores = [r["rouge_scores"]["rouge1_f"] for r in valid_results]
             keyword_coverages = [r["keyword_coverage"] for r in valid_results]
+            
             aggregate_metrics = {
                 "f1_score": {
                     "mean": statistics.mean(f1_scores),
@@ -370,6 +403,7 @@ Answer (be specific and use exact terms from context):"""
             }
         else:
             aggregate_metrics = {"error": "No valid results to aggregate"}
+        
         return {
             "total_questions": len(qa_pairs),
             "successful_evaluations": len(valid_results),
@@ -377,4 +411,4 @@ Answer (be specific and use exact terms from context):"""
             "aggregate_metrics": aggregate_metrics,
             "individual_results": results,
             "evaluation_timestamp": datetime.now().isoformat()
-        } 
+        }

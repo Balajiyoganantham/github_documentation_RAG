@@ -1,22 +1,25 @@
-# Core frameworks
-streamlit>=1.28.0
-langchain>=0.1.0
-langchain-groq>=0.1.0
-langchain-community>=0.0.10
+# Requirements for Zoro - GitHub API Assistant
+# Core UI and Visualization
+streamlit
+plotly
+pandas
+numpy
 
-# Vector store and embeddings
-chromadb>=0.4.0
-sentence-transformers>=2.2.2
+# Logging and Utilities
+# (logging, datetime, json, time are standard libraries)
 
-# Machine learning and evaluation
-scikit-learn>=1.3.0
-numpy>=1.24.0
-rouge-score>=0.1.2
-nltk>=3.8
+# RAG System and LLM (assumed dependencies)
+langchain
+chromadb
 
-# Utilities
-python-dotenv>=1.0.0
-pathlib>=1.0.1
+# If using Groq API (for Llama3-70B)
+groq
 
-# Optional: For better performance
-faiss-cpu>=1.7.4  # Alternative to ChromaDB if needed
+# For environment variable management (if .env is used)
+python-dotenv
+
+# For evaluation metrics (if used in evaluation.py)
+scikit-learn
+rouge-score
+
+# Add any other dependencies as needed for your custom modules
