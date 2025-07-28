@@ -1,232 +1,487 @@
 # evaluation.py
-# Handles evaluation logic for the RAG system
+# Evaluation system for the RAG application
 
-from datetime import datetime
+import re
+import logging
 from typing import List, Dict, Any
-import string
+from datetime import datetime
 import statistics
-from rouge_score import rouge_scorer
+import json
+
+logger = logging.getLogger(__name__)
 
 class EvaluationDataset:
-    """Manages evaluation dataset with ground truth Q&A pairs"""
+    """Contains evaluation questions and expected answers for GitHub API"""
+    
     def __init__(self):
         self.qa_pairs = [
             {
-                "question": "What is the base URL for all GitHub API requests?",
-                "ground_truth": "All GitHub API requests should be made to https://api.github.com. It's recommended to include an Accept header to specify the desired media type, e.g., Accept: application/vnd.github.v3+json.",
-                "keywords": ["base url", "https://api.github.com", "accept header", "media type", "v3", "api.github.com", "github api", "requests"]
+                "question": "How do I authenticate with the GitHub API?",
+                "ground_truth": "You can authenticate with GitHub API using Personal Access Tokens (PAT) in the Authorization header, OAuth apps, or GitHub Apps. The most common method is using a PAT with 'Authorization: token YOUR_TOKEN' header.",
+                "expected_keywords": ["personal access token", "authorization", "header", "oauth", "authentication", "token"]
             },
             {
-                "question": "How do I authenticate with the GitHub API using a Personal Access Token?",
-                "ground_truth": "Include the Personal Access Token (PAT) in the Authorization header: Authorization: token YOUR_PERSONAL_ACCESS_TOKEN. Treat PATs like passwords and grant only necessary scopes. PATs are alternative passwords for authentication with GitHub API.",
-                "keywords": ["authentication", "personal access token", "pat", "authorization header", "token", "scopes", "security", "authorization", "alternative passwords", "github api"]
+                "question": "How can I list repositories for a user?",
+                "ground_truth": "Use GET /users/{username}/repos endpoint to list public repositories for a user. You can use query parameters like per_page, page, type, and sort to customize the results.",
+                "expected_keywords": ["GET", "/users/", "repos", "endpoint", "per_page", "page", "type", "sort"]
             },
             {
-                "question": "Describe the OAuth flow for authenticating a GitHub API app.",
-                "ground_truth": "The OAuth flow involves: 1) Redirecting the user to GitHub's authorization page, 2) User grants access, 3) GitHub redirects back with a code, 4) Exchange code for access_token, 5) Use access_token in the Authorization header. OAuth Apps are used for applications that need to act on behalf of users.",
-                "keywords": ["oauth", "authorization", "access token", "redirect", "code", "flow", "access_token", "github authorization page", "client_id", "client_secret", "oauth apps"]
+                "question": "What are the rate limits for GitHub API?",
+                "ground_truth": "GitHub API has different rate limits: 5000 requests per hour for authenticated requests, 60 for unauthenticated. Rate limit info is included in response headers like X-RateLimit-Limit and X-RateLimit-Remaining.",
+                "expected_keywords": ["rate limit", "5000", "60", "authenticated", "unauthenticated", "X-RateLimit", "headers"]
             },
             {
-                "question": "How do you list repositories for the authenticated user?",
-                "ground_truth": "Use GET /user/repos with authentication. Optional query parameters include type (all, owner, member), sort (created, updated, pushed, full_name), direction (asc, desc), per_page (max 100), and page. The response is an array of Repository objects.",
-                "keywords": ["list repositories", "GET /user/repos", "authentication", "query parameters", "type", "sort", "direction", "per_page", "page", "/user/repos", "repository objects", "array"]
+                "question": "How do I create a repository using the API?",
+                "ground_truth": "Use POST /user/repos endpoint to create a repository. Send JSON payload with name (required), description, private (boolean), and other optional parameters. Requires repo scope for PAT.",
+                "expected_keywords": ["POST", "/user/repos", "endpoint", "JSON", "name", "description", "private", "repo scope"]
             },
             {
-                "question": "How do you create a new repository for the authenticated user?",
-                "ground_truth": "Send a POST request to /user/repos with authentication (public_repo or repo scope). The request body should include name (required), and optionally description, private, and auto_init. The response is the created Repository object with status code 201 Created.",
-                "keywords": ["create repository", "POST", "/user/repos", "authentication", "repo scope", "name", "description", "private", "auto_init", "public_repo", "request body", "201 created", "repository object"]
+                "question": "What should I do if I get a 404 error?",
+                "ground_truth": "404 errors typically mean the resource doesn't exist or you don't have permission to access it. Check the URL, ensure you have proper authentication, and verify you have the required scopes or permissions.",
+                "expected_keywords": ["404", "resource", "permission", "authentication", "scopes", "access"]
             },
             {
-                "question": "How do you list issues for a specific repository?",
-                "ground_truth": "Use GET /repos/{owner}/{repo}/issues. Authentication is required for private repos. Optional query parameters include state (open, closed, all), creator, assignee, labels, sort (created, updated, comments), direction, since, per_page, and page.",
-                "keywords": ["list issues", "GET /repos", "issues", "owner", "repo", "query parameters", "state", "labels", "per_page", "/repos/{owner}/{repo}/issues", "authentication", "private repos", "creator", "assignee", "sort", "direction", "since"]
+                "question": "How do webhooks work in GitHub?",
+                "ground_truth": "GitHub webhooks send HTTP POST requests to configured URLs when specific events occur in repositories. You can configure webhooks in repository settings or via the API using POST /repos/{owner}/{repo}/hooks.",
+                "expected_keywords": ["webhooks", "HTTP POST", "events", "repositories", "POST", "/repos/", "hooks", "configure"]
             },
             {
-                "question": "How do you create a new issue in a repository?",
-                "ground_truth": "Send a POST request to /repos/{owner}/{repo}/issues with authentication (repo scope). The request body must include title, and can include body, milestone, labels, and assignees. The response is an Issue object with status code 201 Created.",
-                "keywords": ["create issue", "POST", "/repos", "issues", "authentication", "repo scope", "title", "labels", "assignees", "/repos/{owner}/{repo}/issues", "request body", "body", "milestone", "issue object", "201 created"]
+                "question": "How can I search for repositories?",
+                "ground_truth": "Use GET /search/repositories endpoint with query parameters. You can search by name, description, topics, language, stars, forks, and more. Use 'q' parameter for the search query.",
+                "expected_keywords": ["GET", "/search/repositories", "query", "parameters", "name", "language", "stars", "forks"]
             },
             {
-                "question": "How does pagination work in the GitHub API?",
-                "ground_truth": "Use per_page and page query parameters to control pagination. The Link header in responses provides URLs for next, previous, first, and last pages. per_page specifies items per page (max 100, default 30), page specifies page number (default 1).",
-                "keywords": ["pagination", "per_page", "page", "link header", "next", "last", "query parameters", "items per page", "page number", "link relations", "navigation", "urls"]
-            },
-            {
-                "question": "What are some common HTTP status codes returned by the GitHub API and what do they mean?",
-                "ground_truth": "Common status codes: 200 OK (success), 201 Created (resource created), 204 No Content (success, no content), 400 Bad Request, 401 Unauthorized, 403 Forbidden (or rate limit), 404 Not Found, 422 Unprocessable Entity, 500 Internal Server Error, 503 Service Unavailable.",
-                "keywords": ["status code", "200", "201", "204", "400", "401", "403", "404", "422", "500", "503", "http status", "ok", "created", "unauthorized", "forbidden", "not found", "bad request", "unprocessable entity", "internal server error", "service unavailable"]
-            },
-            {
-                "question": "What is the structure of an error response from the GitHub API?",
-                "ground_truth": "Error responses include a message, an errors array with details, and a documentation_url. Example: { 'message': 'Validation Failed', 'errors': [...], 'documentation_url': '...' }. The errors array contains objects with resource, field, and code properties.",
-                "keywords": ["error response", "message", "errors", "documentation_url", "validation failed", "error structure", "errors array", "resource", "field", "code", "json object"]
-            },
-            {
-                "question": "How do you retrieve information about the authenticated user?",
-                "ground_truth": "Use GET /user with authentication (PAT or OAuth token). The response is a User object with status code 200 OK. This endpoint requires authentication and returns information about the currently authenticated user.",
-                "keywords": ["get user", "GET /user", "authentication", "user object", "/user", "pat", "oauth token", "200 ok", "authenticated user", "current user"]
-            },
-            {
-                "question": "How do you retrieve information about a user by username?",
-                "ground_truth": "Use GET /users/{username}. Authentication is optional but increases rate limits. The response is a User object. This endpoint retrieves public information about a specific user by their username.",
-                "keywords": ["get user", "GET /users", "username", "user object", "authentication", "/users/{username}", "public information", "rate limits", "optional authentication", "specific user"]
-            },
-            {
-                "question": "What are webhooks in GitHub and what are some common use cases?",
-                "ground_truth": "Webhooks are HTTP callbacks that GitHub sends to your application when specific events occur. Common use cases: triggering CI/CD pipelines on push events, updating external issue trackers on issues events, sending notifications to chat applications (Slack, Discord, Teams), running security scans on new commits.",
-                "keywords": ["webhooks", "events", "ci/cd", "push", "issue tracker", "notifications", "integrations", "subscribe", "http callbacks", "chat applications", "slack", "discord", "teams", "security scans", "automated workflows"]
+                "question": "What are the different types of GitHub tokens?",
+                "ground_truth": "GitHub has Personal Access Tokens (PAT), OAuth app tokens, GitHub App tokens, and installation tokens. Each has different scopes and use cases. PATs are user-specific, while app tokens are for applications.",
+                "expected_keywords": ["personal access token", "oauth", "github app", "installation", "tokens", "scopes", "applications"]
             }
         ]
     
     def get_qa_pairs(self) -> List[Dict[str, Any]]:
+        """Return all Q&A pairs for evaluation"""
         return self.qa_pairs
+    
+    def add_qa_pair(self, question: str, ground_truth: str, expected_keywords: List[str]):
+        """Add a new Q&A pair to the dataset"""
+        self.qa_pairs.append({
+            "question": question,
+            "ground_truth": ground_truth,
+            "expected_keywords": expected_keywords
+        })
 
 class RAGEvaluator:
-    """Evaluation system for RAG pipeline using LangChain"""
-    def __init__(self, rag_system):
+    """Evaluates RAG system responses against ground truth"""
+    
+    def __init__(self, rag_system=None):
         self.rag_system = rag_system
-        self.rouge_scorer = rouge_scorer.RougeScorer(['rouge1', 'rouge2', 'rougeL'], use_stemmer=True)
-        self.evaluation_results = []
     
-    def preprocess_text(self, text: str) -> str:
-        """Enhanced text preprocessing for better keyword matching"""
-        text = text.lower().strip()
-        # Remove punctuation but keep important symbols like /, -, :
-        text = text.replace('(', ' ').replace(')', ' ').replace('[', ' ').replace(']', ' ')
-        text = text.replace('{', ' ').replace('}', ' ').replace('"', ' ').replace("'", ' ')
-        text = text.replace(',', ' ').replace('.', ' ').replace('!', ' ').replace('?', ' ')
-        return ' '.join(text.split())
+    def calculate_f1_metrics(self, predicted: str, ground_truth: str) -> Dict[str, float]:
+        """Calculate F1, precision, and recall based on word overlap"""
+        try:
+            # Tokenize and normalize
+            predicted_words = set(re.findall(r'\b\w+\b', predicted.lower()))
+            ground_truth_words = set(re.findall(r'\b\w+\b', ground_truth.lower()))
+            
+            # Calculate metrics
+            if not predicted_words and not ground_truth_words:
+                return {"precision": 1.0, "recall": 1.0, "f1": 1.0}
+            
+            if not predicted_words:
+                return {"precision": 0.0, "recall": 0.0, "f1": 0.0}
+            
+            if not ground_truth_words:
+                return {"precision": 0.0, "recall": 0.0, "f1": 0.0}
+            
+            # Calculate intersection
+            intersection = predicted_words.intersection(ground_truth_words)
+            
+            precision = len(intersection) / len(predicted_words) if predicted_words else 0.0
+            recall = len(intersection) / len(ground_truth_words) if ground_truth_words else 0.0
+            
+            f1 = (2 * precision * recall) / (precision + recall) if (precision + recall) > 0 else 0.0
+            
+            return {
+                "precision": precision,
+                "recall": recall,
+                "f1": f1
+            }
+        
+        except Exception as e:
+            logger.error(f"Error calculating F1 metrics: {e}")
+            return {"precision": 0.0, "recall": 0.0, "f1": 0.0}
     
-    def extract_keywords(self, text: str) -> List[str]:
-        """Enhanced keyword extraction with better handling of technical terms"""
-        processed_text = self.preprocess_text(text)
-        words = processed_text.split()
+    def calculate_rouge_scores(self, predicted: str, ground_truth: str) -> Dict[str, float]:
+        """Calculate ROUGE-1, ROUGE-2, and ROUGE-L scores"""
+        try:
+            # Simple ROUGE-1 implementation (unigram overlap)
+            predicted_words = re.findall(r'\b\w+\b', predicted.lower())
+            ground_truth_words = re.findall(r'\b\w+\b', ground_truth.lower())
+            
+            if not predicted_words or not ground_truth_words:
+                return {"rouge1_f": 0.0, "rouge1_p": 0.0, "rouge1_r": 0.0}
+            
+            # ROUGE-1
+            predicted_set = set(predicted_words)
+            ground_truth_set = set(ground_truth_words)
+            
+            overlap = predicted_set.intersection(ground_truth_set)
+            
+            rouge1_precision = len(overlap) / len(predicted_set) if predicted_set else 0.0
+            rouge1_recall = len(overlap) / len(ground_truth_set) if ground_truth_set else 0.0
+            rouge1_f = (2 * rouge1_precision * rouge1_recall) / (rouge1_precision + rouge1_recall) if (rouge1_precision + rouge1_recall) > 0 else 0.0
+            
+            return {
+                "rouge1_f": rouge1_f,
+                "rouge1_p": rouge1_precision,
+                "rouge1_r": rouge1_recall
+            }
         
-        # Enhanced stop words list
-        stop_words = {
-            'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by',
-            'is', 'are', 'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had', 'do', 'does', 'did',
-            'will', 'would', 'could', 'should', 'may', 'might', 'must', 'can', 'this', 'that', 'these', 'those',
-            'use', 'used', 'using', 'get', 'gets', 'getting', 'send', 'sends', 'sending', 'make', 'makes', 'making',
-            'include', 'includes', 'including', 'provide', 'provides', 'providing', 'require', 'requires', 'requiring',
-            'need', 'needs', 'needing', 'want', 'wants', 'wanting', 'like', 'likes', 'liking', 'such', 'as', 'when',
-            'where', 'why', 'how', 'what', 'which', 'who', 'whom', 'whose', 'if', 'then', 'else', 'while', 'until',
-            'from', 'into', 'through', 'during', 'before', 'after', 'above', 'below', 'up', 'down', 'out', 'off',
-            'over', 'under', 'again', 'further', 'then', 'once', 'here', 'there', 'when', 'where', 'why', 'how',
-            'all', 'any', 'both', 'each', 'few', 'more', 'most', 'other', 'some', 'such', 'no', 'nor', 'not',
-            'only', 'own', 'same', 'so', 'than', 'too', 'very', 'you', 'your', 'yours', 'yourself', 'yourselves',
-            'i', 'me', 'my', 'myself', 'we', 'our', 'ours', 'ourselves', 'he', 'him', 'his', 'himself', 'she',
-            'her', 'hers', 'herself', 'it', 'its', 'itself', 'they', 'them', 'their', 'theirs', 'themselves'
-        }
-        
-        # Extract keywords, keeping important technical terms
-        keywords = []
-        for word in words:
-            if (word not in stop_words and 
-                len(word) > 2 and 
-                not word.isdigit() and
-                not word.startswith('http')):
-                keywords.append(word)
-        
-        # Add special handling for API endpoints and technical terms
-        import re
-        endpoints = re.findall(r'[a-z]+/[a-z0-9/{}]+', processed_text)
-        keywords.extend(endpoints)
-        
-        # Add status codes
-        status_codes = re.findall(r'\b(?:200|201|204|400|401|403|404|422|500|503)\b', processed_text)
-        keywords.extend(status_codes)
-        
-        return list(set(keywords))  # Remove duplicates
+        except Exception as e:
+            logger.error(f"Error calculating ROUGE scores: {e}")
+            return {"rouge1_f": 0.0, "rouge1_p": 0.0, "rouge1_r": 0.0}
     
-    def calculate_f1_score(self, predicted_text: str, ground_truth_text: str) -> Dict[str, float]:
-        """Enhanced F1 score calculation with better keyword matching"""
-        predicted_keywords = set(self.extract_keywords(predicted_text))
-        ground_truth_keywords = set(self.extract_keywords(ground_truth_text))
+    def calculate_keyword_coverage(self, predicted: str, expected_keywords: List[str]) -> Dict[str, Any]:
+        """Calculate how many expected keywords are present in the predicted answer"""
+        try:
+            predicted_lower = predicted.lower()
+            found_keywords = []
+            
+            for keyword in expected_keywords:
+                if keyword.lower() in predicted_lower:
+                    found_keywords.append(keyword)
+            
+            coverage = len(found_keywords) / len(expected_keywords) if expected_keywords else 1.0
+            
+            return {
+                "coverage": coverage,
+                "found_keywords": found_keywords,
+                "expected_keywords": expected_keywords,
+                "found_count": len(found_keywords),
+                "expected_count": len(expected_keywords)
+            }
         
-        if not ground_truth_keywords:
-            return {"precision": 0.0, "recall": 0.0, "f1": 0.0, "true_positives": 0, "predicted_keywords": [], "ground_truth_keywords": []}
-        
-        # Calculate intersection with partial matching for technical terms
-        true_positives = 0
-        matched_gt_keywords = set()
-        
-        for pred_keyword in predicted_keywords:
-            for gt_keyword in ground_truth_keywords:
-                # Exact match
-                if pred_keyword == gt_keyword:
-                    true_positives += 1
-                    matched_gt_keywords.add(gt_keyword)
-                    break
-                # Partial match for technical terms
-                elif (pred_keyword in gt_keyword or gt_keyword in pred_keyword) and len(pred_keyword) > 3:
-                    true_positives += 0.8  # Partial credit
-                    matched_gt_keywords.add(gt_keyword)
-                    break
-        
-        precision = true_positives / len(predicted_keywords) if predicted_keywords else 0.0
-        recall = len(matched_gt_keywords) / len(ground_truth_keywords) if ground_truth_keywords else 0.0
-        f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0.0
-        
-        return {
-            "precision": precision,
-            "recall": recall,
-            "f1": f1,
-            "true_positives": int(true_positives),
-            "predicted_keywords": list(predicted_keywords),
-            "ground_truth_keywords": list(ground_truth_keywords)
-        }
+        except Exception as e:
+            logger.error(f"Error calculating keyword coverage: {e}")
+            return {
+                "coverage": 0.0,
+                "found_keywords": [],
+                "expected_keywords": expected_keywords,
+                "found_count": 0,
+                "expected_count": len(expected_keywords)
+            }
     
-    def calculate_rouge_scores(self, predicted_text: str, ground_truth_text: str) -> Dict[str, float]:
-        """Calculate ROUGE scores for text similarity"""
-        scores = self.rouge_scorer.score(ground_truth_text, predicted_text)
-        return {
-            "rouge1_f": scores['rouge1'].fmeasure,
-            "rouge1_p": scores['rouge1'].precision,
-            "rouge1_r": scores['rouge1'].recall,
-            "rouge2_f": scores['rouge2'].fmeasure,
-            "rouge2_p": scores['rouge2'].precision,
-            "rouge2_r": scores['rouge2'].recall,
-            "rougeL_f": scores['rougeL'].fmeasure,
-            "rougeL_p": scores['rougeL'].precision,
-            "rougeL_r": scores['rougeL'].recall
-        }
+    def evaluate_response(self, question: str, predicted_response: str, qa_pair: Dict[str, Any]) -> Dict[str, Any]:
+        """Comprehensive evaluation of a single response"""
+        try:
+            ground_truth = qa_pair["ground_truth"]
+            expected_keywords = qa_pair.get("expected_keywords", [])
+            
+            # Calculate all metrics
+            f1_metrics = self.calculate_f1_metrics(predicted_response, ground_truth)
+            rouge_scores = self.calculate_rouge_scores(predicted_response, ground_truth)
+            keyword_results = self.calculate_keyword_coverage(predicted_response, expected_keywords)
+            
+            # Overall quality score (weighted combination)
+            quality_score = (
+                f1_metrics["f1"] * 0.4 +
+                rouge_scores["rouge1_f"] * 0.3 +
+                keyword_results["coverage"] * 0.3
+            )
+            
+            return {
+                "question": question,
+                "predicted_response": predicted_response,
+                "ground_truth": ground_truth,
+                "f1_metrics": f1_metrics,
+                "rouge_scores": rouge_scores,
+                "keyword_coverage": keyword_results["coverage"],
+                "found_keywords": keyword_results["found_keywords"],
+                "expected_keywords": keyword_results["expected_keywords"],
+                "quality_score": quality_score,
+                "evaluation_timestamp": datetime.now().isoformat()
+            }
+        
+        except Exception as e:
+            logger.error(f"Error evaluating response for question '{question}': {e}")
+            return {
+                "question": question,
+                "error": str(e),
+                "evaluation_timestamp": datetime.now().isoformat()
+            }
     
-    def evaluate_response(self, question: str, predicted_response: str, ground_truth_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Enhanced evaluation with better keyword coverage calculation"""
-        ground_truth_text = ground_truth_data["ground_truth"]
+    def batch_evaluate(self, qa_pairs: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Evaluate multiple Q&A pairs and return aggregate results"""
+        try:
+            results = []
+            
+            for qa_pair in qa_pairs:
+                question = qa_pair["question"]
+                
+                # Get response from RAG system
+                if self.rag_system:
+                    rag_response = self.rag_system.get_response(question)
+                    predicted_response = rag_response["answer"]
+                else:
+                    predicted_response = "No RAG system available"
+                
+                # Evaluate response
+                evaluation_result = self.evaluate_response(question, predicted_response, qa_pair)
+                results.append(evaluation_result)
+            
+            # Calculate aggregate metrics
+            valid_results = [r for r in results if "error" not in r]
+            
+            if valid_results:
+                f1_scores = [r["f1_metrics"]["f1"] for r in valid_results]
+                rouge_scores = [r["rouge_scores"]["rouge1_f"] for r in valid_results]
+                keyword_coverages = [r["keyword_coverage"] for r in valid_results]
+                quality_scores = [r["quality_score"] for r in valid_results]
+                
+                aggregate_metrics = {
+                    "f1_score": {
+                        "mean": statistics.mean(f1_scores),
+                        "std": statistics.stdev(f1_scores) if len(f1_scores) > 1 else 0.0,
+                        "min": min(f1_scores),
+                        "max": max(f1_scores)
+                    },
+                    "rouge1_f": {
+                        "mean": statistics.mean(rouge_scores),
+                        "std": statistics.stdev(rouge_scores) if len(rouge_scores) > 1 else 0.0,
+                        "min": min(rouge_scores),
+                        "max": max(rouge_scores)
+                    },
+                    "keyword_coverage": {
+                        "mean": statistics.mean(keyword_coverages),
+                        "std": statistics.stdev(keyword_coverages) if len(keyword_coverages) > 1 else 0.0,
+                        "min": min(keyword_coverages),
+                        "max": max(keyword_coverages)
+                    },
+                    "quality_score": {
+                        "mean": statistics.mean(quality_scores),
+                        "std": statistics.stdev(quality_scores) if len(quality_scores) > 1 else 0.0,
+                        "min": min(quality_scores),
+                        "max": max(quality_scores)
+                    }
+                }
+                
+                return {
+                    "individual_results": results,
+                    "aggregate_metrics": aggregate_metrics,
+                    "summary": {
+                        "total_questions": len(qa_pairs),
+                        "successful_evaluations": len(valid_results),
+                        "failed_evaluations": len(results) - len(valid_results),
+                        "overall_quality_score": aggregate_metrics["quality_score"]["mean"],
+                        "evaluation_timestamp": datetime.now().isoformat()
+                    }
+                }
+            else:
+                return {
+                    "individual_results": results,
+                    "aggregate_metrics": {},
+                    "summary": {
+                        "total_questions": len(qa_pairs),
+                        "successful_evaluations": 0,
+                        "failed_evaluations": len(results),
+                        "overall_quality_score": 0.0,
+                        "evaluation_timestamp": datetime.now().isoformat()
+                    }
+                }
         
-        # Calculate F1 metrics
-        f1_metrics = self.calculate_f1_score(predicted_response, ground_truth_text)
+        except Exception as e:
+            logger.error(f"Error in batch evaluation: {e}")
+            return {
+                "error": str(e),
+                "evaluation_timestamp": datetime.now().isoformat()
+            }
+    
+    def generate_evaluation_report(self, evaluation_results: Dict[str, Any], output_file: str = None) -> str:
+        """Generate a detailed evaluation report"""
+        try:
+            report_lines = []
+            report_lines.append("=" * 80)
+            report_lines.append("RAG SYSTEM EVALUATION REPORT")
+            report_lines.append("=" * 80)
+            report_lines.append(f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            report_lines.append("")
+            
+            # Summary section
+            summary = evaluation_results.get("summary", {})
+            report_lines.append("SUMMARY")
+            report_lines.append("-" * 40)
+            report_lines.append(f"Total Questions: {summary.get('total_questions', 0)}")
+            report_lines.append(f"Successful Evaluations: {summary.get('successful_evaluations', 0)}")
+            report_lines.append(f"Failed Evaluations: {summary.get('failed_evaluations', 0)}")
+            report_lines.append(f"Overall Quality Score: {summary.get('overall_quality_score', 0.0):.3f}")
+            report_lines.append("")
+            
+            # Aggregate metrics
+            aggregate = evaluation_results.get("aggregate_metrics", {})
+            if aggregate:
+                report_lines.append("AGGREGATE METRICS")
+                report_lines.append("-" * 40)
+                
+                for metric_name, metric_data in aggregate.items():
+                    report_lines.append(f"{metric_name.upper().replace('_', ' ')}:")
+                    report_lines.append(f"  Mean: {metric_data.get('mean', 0.0):.3f}")
+                    report_lines.append(f"  Std:  {metric_data.get('std', 0.0):.3f}")
+                    report_lines.append(f"  Min:  {metric_data.get('min', 0.0):.3f}")
+                    report_lines.append(f"  Max:  {metric_data.get('max', 0.0):.3f}")
+                    report_lines.append("")
+            
+            # Individual results
+            individual_results = evaluation_results.get("individual_results", [])
+            if individual_results:
+                report_lines.append("INDIVIDUAL QUESTION RESULTS")
+                report_lines.append("-" * 40)
+                
+                for i, result in enumerate(individual_results, 1):
+                    if "error" in result:
+                        report_lines.append(f"Q{i}: {result['question']}")
+                        report_lines.append(f"ERROR: {result['error']}")
+                        report_lines.append("")
+                        continue
+                    
+                    report_lines.append(f"Q{i}: {result['question']}")
+                    report_lines.append(f"Quality Score: {result.get('quality_score', 0.0):.3f}")
+                    report_lines.append(f"F1 Score: {result.get('f1_metrics', {}).get('f1', 0.0):.3f}")
+                    report_lines.append(f"ROUGE-1 F: {result.get('rouge_scores', {}).get('rouge1_f', 0.0):.3f}")
+                    report_lines.append(f"Keyword Coverage: {result.get('keyword_coverage', 0.0):.3f}")
+                    
+                    found_kw = result.get('found_keywords', [])
+                    expected_kw = result.get('expected_keywords', [])
+                    missing_kw = [kw for kw in expected_kw if kw not in found_kw]
+                    
+                    report_lines.append(f"Found Keywords: {', '.join(found_kw) if found_kw else 'None'}")
+                    report_lines.append(f"Missing Keywords: {', '.join(missing_kw) if missing_kw else 'None'}")
+                    report_lines.append("")
+            
+            report_text = "\n".join(report_lines)
+            
+            # Save to file if specified
+            if output_file:
+                with open(output_file, 'w', encoding='utf-8') as f:
+                    f.write(report_text)
+                logger.info(f"Evaluation report saved to {output_file}")
+            
+            return report_text
         
-        # Calculate ROUGE scores
-        rouge_scores = self.calculate_rouge_scores(predicted_response, ground_truth_text)
+        except Exception as e:
+            logger.error(f"Error generating evaluation report: {e}")
+            return f"Error generating report: {str(e)}"
+    
+    def save_results_json(self, evaluation_results: Dict[str, Any], output_file: str):
+        """Save evaluation results to JSON file"""
+        try:
+            with open(output_file, 'w', encoding='utf-8') as f:
+                json.dump(evaluation_results, f, indent=2, ensure_ascii=False)
+            logger.info(f"Evaluation results saved to {output_file}")
+        except Exception as e:
+            logger.error(f"Error saving results to JSON: {e}")
+
+
+class EvaluationRunner:
+    """Main class to run RAG system evaluations"""
+    
+    def __init__(self, rag_system=None):
+        self.rag_system = rag_system
+        self.dataset = EvaluationDataset()
+        self.evaluator = RAGEvaluator(rag_system)
+    
+    def run_full_evaluation(self, save_report: bool = True, report_dir: str = "./evaluation_results") -> Dict[str, Any]:
+        """Run complete evaluation pipeline"""
+        try:
+            logger.info("Starting RAG system evaluation...")
+            
+            # Get evaluation dataset
+            qa_pairs = self.dataset.get_qa_pairs()
+            logger.info(f"Loaded {len(qa_pairs)} evaluation questions")
+            
+            # Run batch evaluation
+            results = self.evaluator.batch_evaluate(qa_pairs)
+            
+            if save_report:
+                import os
+                os.makedirs(report_dir, exist_ok=True)
+                
+                # Generate timestamp for file names
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                
+                # Save JSON results
+                json_file = os.path.join(report_dir, f"evaluation_results_{timestamp}.json")
+                self.evaluator.save_results_json(results, json_file)
+                
+                # Generate and save text report
+                report_file = os.path.join(report_dir, f"evaluation_report_{timestamp}.txt")
+                report_text = self.evaluator.generate_evaluation_report(results, report_file)
+                
+                logger.info(f"Evaluation completed. Results saved to {report_dir}")
+            
+            return results
         
-        # Enhanced keyword coverage calculation
-        expected_keywords = ground_truth_data.get("keywords", [])
-        predicted_keywords = self.extract_keywords(predicted_response)
+        except Exception as e:
+            logger.error(f"Error running evaluation: {e}")
+            return {"error": str(e)}
+    
+    def add_custom_question(self, question: str, ground_truth: str, expected_keywords: List[str]):
+        """Add a custom evaluation question"""
+        self.dataset.add_qa_pair(question, ground_truth, expected_keywords)
+        logger.info(f"Added custom question: {question}")
+    
+    def evaluate_single_question(self, question: str, ground_truth: str, expected_keywords: List[str]) -> Dict[str, Any]:
+        """Evaluate a single question"""
+        try:
+            # Get response from RAG system
+            if self.rag_system:
+                rag_response = self.rag_system.get_response(question)
+                predicted_response = rag_response["answer"]
+            else:
+                predicted_response = "No RAG system available"
+            
+            # Create temporary QA pair
+            qa_pair = {
+                "question": question,
+                "ground_truth": ground_truth,
+                "expected_keywords": expected_keywords
+            }
+            
+            # Evaluate
+            result = self.evaluator.evaluate_response(question, predicted_response, qa_pair)
+            return result
         
-        # Calculate keyword coverage with partial matching
-        matched_keywords = []
-        for expected_keyword in expected_keywords:
-            expected_lower = expected_keyword.lower()
-            for pred_keyword in predicted_keywords:
-                if (expected_lower == pred_keyword.lower() or 
-                    expected_lower in pred_keyword.lower() or 
-                    pred_keyword.lower() in expected_lower):
-                    matched_keywords.append(expected_keyword)
-                    break
+        except Exception as e:
+            logger.error(f"Error evaluating single question: {e}")
+            return {"error": str(e)}
+
+
+# Example usage and testing functions
+def main():
+    """Example usage of the evaluation system"""
+    try:
+        # Initialize evaluation runner (without RAG system for demo)
+        runner = EvaluationRunner()
         
-        keyword_coverage = len(matched_keywords) / len(expected_keywords) if expected_keywords else 0.0
+        # Run full evaluation
+        results = runner.run_full_evaluation()
         
-        return {
-            "question": question,
-            "predicted_response": predicted_response,
-            "ground_truth": ground_truth_text,
-            "f1_metrics": f1_metrics,
-            "rouge_scores": rouge_scores,
-            "keyword_coverage": keyword_coverage,
-            "expected_keywords": expected_keywords,
-            "found_keywords": matched_keywords,
-            "timestamp": datetime.now().isoformat()
-        } 
+        # Print summary
+        if "summary" in results:
+            summary = results["summary"]
+            print(f"Evaluation completed!")
+            print(f"Total questions: {summary['total_questions']}")
+            print(f"Overall quality score: {summary['overall_quality_score']:.3f}")
+        else:
+            print("Evaluation failed:", results.get("error", "Unknown error"))
+    
+    except Exception as e:
+        print(f"Error running evaluation: {e}")
+
+
+if __name__ == "__main__":
+    # Setup logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    
+    main()
