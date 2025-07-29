@@ -413,37 +413,31 @@ def main():
                             except Exception as e:
                                 st.error(f"Error: {str(e)}")
         
-        # Display conversation history
+        # Display conversation history (top)
         chat_container = st.container()
         with chat_container:
             for i, message in enumerate(st.session_state.conversation_history):
                 if message["role"] == "user":
                     with st.chat_message("user", avatar="👤"):
                         st.write(message["content"])
-                
                 elif message["role"] == "assistant":
                     with st.chat_message("assistant", avatar="🗡️"):
                         st.write(message["content"])
-                        
                         # Display metrics
                         col1, col2, col3, col4 = st.columns(4)
                         with col1:
                             confidence = message.get("confidence", 0.0)
                             color = "🟢" if confidence > 0.8 else "🟡" if confidence > 0.5 else "🔴"
                             st.metric("Confidence", f"{confidence:.2f}", delta=None)
-                        
                         with col2:
                             response_time = message.get("response_time", 0.0)
                             st.metric("Response Time", f"{response_time:.2f}s")
-                        
                         with col3:
                             sources_count = len(message.get("sources", []))
                             st.metric("Sources", sources_count)
-                        
                         with col4:
                             memory_context = message.get("memory_context", 0)
                             st.metric("Memory Items", memory_context)
-                        
                         # Expandable sections
                         if message.get("retrieved_chunks"):
                             with st.expander("📄 Retrieved Chunks", expanded=False):
@@ -452,51 +446,43 @@ def main():
                                     st.write(chunk["content"])
                                     if j < len(message["retrieved_chunks"]) - 1:
                                         st.markdown("---")
-                        
                         if message.get("sources"):
                             with st.expander("📚 Sources Used", expanded=False):
                                 for source in message["sources"]:
                                     st.write(f"• {source}")
-        
-        # Chat input
-        if prompt := st.chat_input("Ask me anything about GitHub API... (I remember our conversation! 🧠)"):
+
+        # Chat input (bottom, like ChatGPT)
+        prompt = st.chat_input("Ask me anything about GitHub API... (I remember our conversation! 🧠)")
+        if prompt:
             # Add user message
             st.session_state.conversation_history.append({
                 "role": "user",
                 "content": prompt
             })
-            
             # Display user message immediately
             with st.chat_message("user", avatar="👤"):
                 st.write(prompt)
-            
             # Get and display assistant response
             with st.chat_message("assistant", avatar="🗡️"):
                 with st.spinner("🤔 Thinking with conversational memory..."):
                     try:
                         response_data = st.session_state.rag_system.get_response(prompt)
-                        
                         # Display answer
                         st.write(response_data["answer"])
-                        
                         # Display metrics
                         col1, col2, col3, col4 = st.columns(4)
                         with col1:
                             confidence = response_data.get("confidence", 0.0)
                             st.metric("Confidence", f"{confidence:.2f}")
-                        
                         with col2:
                             response_time = response_data.get("response_time", 0.0)
                             st.metric("Response Time", f"{response_time:.2f}s")
-                        
                         with col3:
                             sources_count = len(response_data.get("sources", []))
                             st.metric("Sources", sources_count)
-                        
                         with col4:
                             memory_context = response_data.get("memory_context", 0)
                             st.metric("Memory Items", memory_context)
-                        
                         # Store assistant message
                         assistant_message = {
                             "role": "assistant",
@@ -507,9 +493,7 @@ def main():
                             "retrieved_chunks": response_data.get("retrieved_chunks", []),
                             "memory_context": response_data.get("memory_context", 0)
                         }
-                        
                         st.session_state.conversation_history.append(assistant_message)
-                        
                         # Display expandable sections
                         if response_data.get("retrieved_chunks"):
                             with st.expander("📄 Retrieved Chunks", expanded=False):
@@ -518,12 +502,10 @@ def main():
                                     st.write(chunk["content"])
                                     if j < len(response_data["retrieved_chunks"]) - 1:
                                         st.markdown("---")
-                        
                         if response_data.get("sources"):
                             with st.expander("📚 Sources Used", expanded=False):
                                 for source in response_data["sources"]:
                                     st.write(f"• {source}")
-                        
                     except Exception as e:
                         error_message = f"I apologize, but I encountered an error: {str(e)}"
                         st.error(error_message)
