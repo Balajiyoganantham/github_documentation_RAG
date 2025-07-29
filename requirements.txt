@@ -25,3 +25,5 @@ rouge-score
 # Add any other dependencies as needed for your custom modules
 langchain_community
 langchain_groq 
+sentence-transformers
+langchain-huggingface
